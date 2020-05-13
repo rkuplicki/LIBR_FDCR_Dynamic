@@ -1,7 +1,7 @@
 ---
-title: "DCR OHBM 2020 Abstract"
+title: "FDCR Dynamic Analysis"
 author: "Rayus"
-date: "Feb 4, 2019"
+date: "Apr 9, 2020"
 output: 
   html_document:
     code_folding: hide
@@ -25,7 +25,7 @@ options(width = 300)
 
 ## Input
 
-Analysis for OHBM 2020 abstract on the temporal dynamics of drug cue reactivity with replication.
+Analysis for FDCR manuscript describing the temporal dynamics of drug cue reactivity with replication.
 ## Read Data
 
 ```{r}
@@ -44,16 +44,16 @@ loadRData <- function(fileName){
 
 ```{r}
 
-idps_neurocaps <- loadRData('data/neurocaps/idps-neurocaps-2-13-2020.RData')
+idps_neurocaps <- loadRData('../paper-dcr-temporaldynamics/data/neurocaps/idps-neurocaps-2-13-2020.RData')
 idps_neurocaps$motion <- idps_neurocaps$dcr_motaveraw_r1
 #remove subjects due to excessive motion
 idps_neurocaps <- idps_neurocaps[idps_neurocaps$motion < 0.3 & (!idps_neurocaps$neurocaps_exclude),]
 idps_neurocaps_ocr <- idps_neurocaps[idps_neurocaps$dcr_version == 'ocr',]
 idps_neurocaps_mcr <- idps_neurocaps[idps_neurocaps$dcr_version == 'mcr',]
-idps_tacs <- loadRData('data/tacs/idps-tacs-2-13-2020.RData')
+idps_tacs <- loadRData('../paper-dcr-temporaldynamics/data/tacs/idps-tacs-2-13-2020.RData')
 idps_tacs$motion <- idps_tacs$dcr_tpre_motaveraw_r1
 idps_tacs <- idps_tacs[idps_tacs$motion < 0.3 & (!idps_tacs$tacs_exclude),]
-idps_tdcs <- loadRData('data/tdcs/idps-tdcs-2-13-2020.RData')
+idps_tdcs <- loadRData('../paper-dcr-temporaldynamics/data/tdcs/idps-tdcs-2-13-2020.RData')
 idps_tdcs$motion <- idps_tdcs$dcr_tpre_motaveraw_r1
 idps_tdcs <- idps_tdcs[idps_tdcs$motion < 0.3 & (!idps_tdcs$tdcs_exclude),]
 
@@ -86,29 +86,29 @@ print(n_neurocaps_ocr)
 print('tACS OCR')
 print(n_tacs)
 
-write.csv(idps_tdcs$id, 'subjects-tdcs.csv', row.names = FALSE)
-write.csv(idps_neurocaps_mcr$id, 'subjects-neurocapsMCR.csv', row.names = FALSE)
-write.csv(idps_neurocaps_ocr$id, 'subjects-neurocapsOCR.csv', row.names = FALSE)
-write.csv(idps_tacs$id, 'subjects-tacs.csv', row.names = FALSE)
+#write.csv(idps_tdcs$id, 'subjects-tdcs.csv', row.names = FALSE)
+#write.csv(idps_neurocaps_mcr$id, 'subjects-neurocapsMCR.csv', row.names = FALSE)
+#write.csv(idps_neurocaps_ocr$id, 'subjects-neurocapsOCR.csv', row.names = FALSE)
+#write.csv(idps_tacs$id, 'subjects-tacs.csv', row.names = FALSE)
 
 
 #write out behavioral data to share with Hamed/Henry
 
 behavioral_cols <- grepl('response', names(idps_tdcs))
 behavioral_cols[names(idps_tdcs) == 'id'] <- TRUE
-write.csv(idps_tdcs[, behavioral_cols], 'behavior-tdcs.csv', row.names = FALSE)
+#write.csv(idps_tdcs[, behavioral_cols], 'behavior-tdcs.csv', row.names = FALSE)
 
 behavioral_cols <- grepl('tpre_response', names(idps_tacs))
 behavioral_cols[names(idps_tacs) == 'id'] <- TRUE
-write.csv(idps_tacs[, behavioral_cols], 'behavior-tacs.csv', row.names = FALSE)
+#write.csv(idps_tacs[, behavioral_cols], 'behavior-tacs.csv', row.names = FALSE)
 
 behavioral_cols <- grepl('response', names(idps_neurocaps_mcr))
 behavioral_cols[names(idps_neurocaps_mcr) == 'id'] <- TRUE
-write.csv(idps_neurocaps_mcr[, behavioral_cols], 'behavior-neurocapsMCR.csv', row.names = FALSE)
+#write.csv(idps_neurocaps_mcr[, behavioral_cols], 'behavior-neurocapsMCR.csv', row.names = FALSE)
 
 behavioral_cols <- grepl('response', names(idps_neurocaps_ocr))
 behavioral_cols[names(idps_neurocaps_ocr) == 'id'] <- TRUE
-write.csv(idps_neurocaps_ocr[, behavioral_cols], 'behavior-neurocapsOCR.csv', row.names = FALSE)
+#write.csv(idps_neurocaps_ocr[, behavioral_cols], 'behavior-neurocapsOCR.csv', row.names = FALSE)
 
 #idps_tacs <- read.csv('idps-tacs-abstract.csv')
 #variable names are:
@@ -1001,7 +1001,7 @@ all_slopes <- merge(all_slopes, extract_one_slopes('8', 'RAmy', prefix = 'dcr_tp
 
 
 
-vas_data <- read.csv('data/MethVASData.csv')
+vas_data <- read.csv('../paper-dcr-temporaldynamics/data/MethVASData.csv')
 vas_data <- vas_data[, c('record_id', 'redcap_event_name', 'mcs_vas', 'mcs_vas_2')]
 
 names(vas_data) <- c('id', 'visit', 'craving', 'control')
@@ -1020,14 +1020,14 @@ merged_data <- merge(all_slopes, vas_data_wide, all.x = TRUE)
 
 
 
-last_use_data <- read.csv('data/ADUQ_2019-06-12_1407.csv')
+last_use_data <- read.csv('../paper-dcr-temporaldynamics/data/ADUQ_2019-06-12_1407.csv')
 merged_data <- merge(merged_data, last_use_data[, c('id', 'aduq_20a')], all.x = TRUE)
 names(merged_data)[names(merged_data) == 'aduq_20a'] <- 'DaysSinceLastUse'
 
 
 
 
-tableone_data <- read.csv('data/Table1Database66_ver2.csv')
+tableone_data <- read.csv('../paper-dcr-temporaldynamics/data/Table1Database66_ver2.csv')
 merged_data <- merge(merged_data, tableone_data, all.x = TRUE)
 
 idps_tdcs$methvsneutral_craving_selfreport_insidescanner <- (idps_tdcs$dcr_tpre_response_craving_1 + idps_tdcs$dcr_tpre_response_craving_3 +

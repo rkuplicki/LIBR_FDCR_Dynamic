@@ -1,0 +1,28 @@
+"x"
+"1" "tDCS Model Output"
+"Estimate","Std. Error","df","t value","Pr(>|t|)"
+"(Intercept)",1.694,0.092,91.38,18.396,0
+"conditiondrug",1.319,0.079,63.399,16.78,0
+"time",0.182,0.031,368.812,5.87,0
+"conditiondrug:time",-0.106,0.043,367.1,-2.45,0.015
+"x"
+"1" "Neurocaps MCR Model Output"
+"Estimate","Std. Error","df","t value","Pr(>|t|)"
+"(Intercept)",1.089,0.129,54.968,8.465,0
+"conditiondrug",1.29,0.167,27.953,7.708,0
+"time",0.041,0.032,168.231,1.261,0.209
+"conditiondrug:time",-0.02,0.046,168.288,-0.436,0.664
+"x"
+"1" "Neurocaps OCR Model Output"
+"Estimate","Std. Error","df","t value","Pr(>|t|)"
+"(Intercept)",1.382,0.125,38.349,11.101,0
+"conditiondrug",1.917,0.147,21.02,13.031,0
+"time",0.141,0.042,128.194,3.374,0.001
+"conditiondrug:time",-0.055,0.059,128.19,-0.929,0.355
+"x"
+"1" "tACS OCR Model Output"
+"Estimate","Std. Error","df","t value","Pr(>|t|)"
+"(Intercept)",1.386,0.128,39.047,10.833,0
+"conditiondrug",1.946,0.154,20.959,12.651,0
+"time",0.173,0.04,127.165,4.295,0
+"conditiondrug:time",-0.026,0.057,127.311,-0.462,0.645
