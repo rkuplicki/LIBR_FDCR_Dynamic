@@ -1,0 +1,615 @@
+---
+title: "FDCR Dynamic Analysis Supplemental Combined LME"
+author: "Rayus"
+date: "Jun 9, 2020"
+output: 
+  html_document:
+    code_folding: hide
+    highlight: tango
+    theme: cerulean
+    toc: true
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+word_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 300)
+```
+
+## Input
+
+Analysis for FDCR manuscript describing the temporal dynamics of drug cue reactivity with replication.
+## Read Data
+
+```{r}
+library(reshape2)
+library(lme4)
+library(lmerTest)
+library(ggplot2)
+library(sjstats) #for icc of mixed effects models
+library(sjPlot)
+library(grid)
+library(gridExtra)
+library(ggpubr)
+library(psych)
+#function to be able to read in an .RData file and assign it to a variable
+loadRData <- function(fileName){
+  #loads an RData file, and returns it
+  load(fileName)
+  get(ls()[ls() != "fileName"])
+}
+
+```
+
+
+
+
+```{r}
+idps_neurocaps <- loadRData('../../paper-dcr-temporaldynamics/data/neurocaps/idps-neurocaps-errts-6-10-2020.RData')
+idps_neurocaps$motion <- idps_neurocaps$dcr_motaveraw_r1
+#remove subjects due to excessive motion
+idps_neurocaps <- idps_neurocaps[idps_neurocaps$motion < 0.3 & (!idps_neurocaps$neurocaps_exclude),]
+idps_neurocaps_ocr <- idps_neurocaps[idps_neurocaps$dcr_version == 'ocr',]
+idps_neurocaps_mcr <- idps_neurocaps[idps_neurocaps$dcr_version == 'mcr',]
+idps_tacs <- loadRData('../../paper-dcr-temporaldynamics/data/tacs/idps-tacs-errts-6-10-2020.RData')
+idps_tacs$motion <- idps_tacs$dcr_tpre_motaveraw_r1
+idps_tacs <- idps_tacs[idps_tacs$motion < 0.3 & (!idps_tacs$tacs_exclude),]
+idps_tdcs <- loadRData('../../paper-dcr-temporaldynamics/data/tdcs/idps-tdcs-errts-6-10-2020.RData')
+idps_tdcs$motion <- idps_tdcs$dcr_tpre_motaveraw_r1
+idps_tdcs <- idps_tdcs[idps_tdcs$motion < 0.3 & (!idps_tdcs$tdcs_exclude),]
+
+#only use neurocaps OCR subjects who also did tACS
+idps_neurocaps_ocr <- idps_neurocaps_ocr[idps_neurocaps_ocr$id %in% idps_tacs$id,]
+
+#only use tacs subjects with good neurocaps data
+idps_tacs <- idps_tacs[idps_tacs$id %in% idps_neurocaps_ocr$id,]
+
+#idps_tacs$dcr_tpre_response_craving_[0-7]
+#idp_tdcs
+#dcr_tpre_response_box_rt_0
+#dcr_tpre_response_craving_rt_0
+#idps_neurocaps_ocr$dcr_response_box_craving[0-7]
+
+
+n_tdcs <- length(unique(idps_tdcs$id))
+n_neurocaps_mcr <- length(unique(idps_neurocaps_mcr$id))
+n_neurocaps_ocr <- length(unique(idps_neurocaps_ocr$id))
+n_tacs <- length(unique(idps_tacs$id))
+
+
+print('Subjects In Each Dataset')
+print('tDCS MCR')
+print(n_tdcs)
+print('Neurocaps MCR')
+print(n_neurocaps_mcr)
+print('Neurocaps OCR')
+print(n_neurocaps_ocr)
+print('tACS OCR')
+print(n_tacs)
+
+####
+
+
+
+
+
+
+#idps_tdcs <- loadRData('idps-wideformat-errts-tdcs.RData')
+
+
+#function to read an xmatrix
+read_xmatrix <- function(fname){
+  xmatrix <- read.table(fname)
+  #from .1D file, column names:
+  #"drug.r11#0 ; drug.r12#0 ; drug.r13#0 ; drug.r14#0 ; neutral.r11#0 ; neutral.r12#0 ; neutral.r13#0 ; neutral.r14#0"
+  names(xmatrix) <- c('drug1', 'drug2', 'drug3', 'drug4', 'neutral1', 'neutral2', 'neutral3', 'neutral4')
+  xmatrix$drug <- rowSums(xmatrix[, c('drug1', 'drug2', 'drug3', 'drug4')])
+  xmatrix$neutral <- rowSums(xmatrix[, c('neutral1', 'neutral2', 'neutral3', 'neutral4')])
+  #make sure they look right
+  plot(xmatrix$neutral)
+  plot(xmatrix$drug)
+  return(xmatrix)
+}
+
+
+xmatrix_tdcs <- read_xmatrix('X.stim.xmat-tdcs.1D')
+xmatrix_tacs <- read_xmatrix('X.stim.xmat-tacs.1D')
+xmatrix_neurocaps_mcr <- read_xmatrix('X.stim.xmat-neurocaps-MCR.1D')
+xmatrix_neurocaps_ocr <- read_xmatrix('X.stim.xmat-neurocaps-OCR.1D')
+
+
+library(stringr)
+library(multcomp)
+library(nlme)
+one_errts_lme <- function(roi, this_label, idps, xmat, prefix = 'dcr_', task = '', limits_y = NA){
+
+  #roi <- '1'
+  #this_label <- 'VMPFC'
+  #prefix <- 'dcr_tpre_'
+  #idps <- idps_tdcs
+  #xmat <- xmatrix_tdcs
+  
+  #stats_tdcsprelimerrts_.
+  column_prefix <- paste0(prefix, 'stats_tdcsprelimerrts_.')
+  column_prefixes <- paste0(column_prefix, 0:195)
+  columns <- paste0(column_prefixes, '_mean_', roi)
+  one_dataset <- idps[, c('id', 'motion', columns)]
+  long_data <- melt(one_dataset, id.vars = c('id', 'motion'))
+  #e.g.:
+  #dcr_tpre_stats_tdcsprelimerrts_.6_mean_1
+  #is TR number 6 from ROI number 1
+  #need to get a column that is just TR number
+  tr_suffix <- str_split_fixed(long_data$variable, '\\.', 2)[,2]
+  tr <- str_split_fixed(tr_suffix, '_', 2)[,1]
+  
+  long_data$tr <- as.numeric(tr)
+  #add tr column to x matrix
+  xmat$tr <- 0:(nrow(xmat) - 1)
+  #add x matrix to long data
+  long_data <- merge(long_data, xmat)
+  #remove TRs that were censored (and thus have value exactly equal to 0)
+  long_data <- long_data[long_data$value != 0,]
+  long_data <- long_data[!is.na(long_data$value) ,]
+  
+  long_data$tr_centered <- long_data$tr - mean(long_data$tr)
+  long_data$tr_centered <- long_data$tr_centered / sd(long_data$tr_centered)
+  #this_lme <- lmer(paste('value ~ drug * tr_centered + neutral * tr_centered + motion + (1|id)'), data = long_data)
+  
+  this_lme_arma <- lme(fixed = as.formula('value ~ drug * tr_centered + neutral * tr_centered + motion'),
+                  random = ~ 1|id, data = long_data, correlation = corARMA(form = ~ tr | id, p = 1, q = 1))
+  
+  #post_hoc <- glht(this_lme, linfct = c('drug - neutral == 0',
+  #                                      'drug:tr_centered - tr_centered:neutral == 0'))
+  post_hoc_arma <- glht(this_lme_arma, linfct = c('drug - neutral == 0',
+                                        'drug:tr_centered - tr_centered:neutral == 0',
+                                        'tr_centered + tr_centered:neutral == 0'))
+  #print(summary(this_lme_arma))
+  #print(summary(post_hoc_arma))
+  
+  #get the mean across subjects--will plot this against the fitted values for drug and neutral
+  mean_ts <- aggregate(value ~ tr, data = long_data, mean)
+  #will use the fixed effects to make reconstructed timeseries to plot along with the mean across subjects
+  #they are:
+  #1: intercept
+  #2: drug
+  #3: tr_centered
+  #4: neutral
+  #5: motion
+  #6: drug:tr_centered
+  #7: tr_centered:neutral
+  fixed_effects <- fixef(this_lme_arma)
+  
+  centered_trs <- unique(long_data$tr_centered)
+  #need to cut off first 3 TRs, since they are censored for everyone and xmat$drug is 3 TRs longer than centered_trs
+  drug_response <- centered_trs*fixed_effects['drug:tr_centered'] + fixed_effects['drug'] * xmat$drug[4:length(xmat$drug)]
+  neutral_response <- centered_trs*fixed_effects['tr_centered:neutral'] + fixed_effects['neutral'] * xmat$neutral[4:length(xmat$neutral)]
+
+  time_response <- centered_trs*fixed_effects['tr_centered']
+  
+  ideal_response <- drug_response + neutral_response + time_response + fixed_effects['motion'] + fixed_effects['(Intercept)']
+  
+  response_plot_frame <- data.frame(tr = 3:195, ideal_drug = drug_response, ideal_neutral = neutral_response,
+                                    ideal_total = ideal_response)
+  
+  #geom_smooth(aes(x = tr, y = value)) + 
+  p <- ggplot(long_data) + geom_point(data = mean_ts, aes(x = tr, y = value), size = 1) +
+    geom_line(data = response_plot_frame, aes(x = tr, y = ideal_drug), color = '#F8766D', size = 2) + 
+    geom_line(data = response_plot_frame, aes(x = tr, y = ideal_neutral), color = '#00BFC4', size = 2) +
+    #geom_line(data = response_plot_frame, aes(x = tr, y = ideal_total), color = 'black', size = 2) +
+    ggtitle(task) + theme_bw() +
+    xlab('TR')
+  return(list(model = this_lme_arma, p = p, contrasts = post_hoc_arma, label = this_label, task = task))
+  #plot_model(this_lme, type = 'std') + ylim(-0.3, 0.3)
+  
+#  return(list(model = this_lme, plotframe = plot_frame, p = p, p2=p2, p3=p3, dset = long_data, within_visit_iccs = within_visit_iccs,
+#              within_iccs_simple_intervals = within_iccs_simple_intervals,
+#              within_contrast_icc_intervals = within_contrast_icc_intervals))
+}
+
+
+
+  
+
+
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```{r}
+
+
+
+
+
+compare_models <- function(plot_frame, label){
+  #prints off tables of z-scores and p-values for the coefficients of condition and condition*time compared between all pairs of models
+  #tdcs_summary <- summary(tdcs_model)
+  #fill this with z-scores testing for differences between coefficients of different models
+  
+  ztable_condition <- data.frame(DiscoverySample=c(NA,NA,NA,NA), ReplicationSample1 = c(NA,NA,NA,NA),
+                       ReplicationSample2 = c(NA,NA,NA,NA), Sample2Retest=c(NA,NA,NA,NA))
+  rownames(ztable_condition) <- names(ztable_condition)
+  
+  ztable_conditionbytime <- data.frame(DiscoverySample=c(NA,NA,NA,NA), ReplicationSample1 = c(NA,NA,NA,NA),
+                       ReplicationSample2 = c(NA,NA,NA,NA), Sample2Retest=c(NA,NA,NA,NA))
+  rownames(ztable_conditionbytime) <- names(ztable_conditionbytime)
+  
+  #plot_frame looks like:
+  #                                              beta          se            effect                 task           lower      upper
+  #drug - neutral                           0.094490945 0.011661128      drugVneutral     Discovery Sample      0.0716351333 0.11734676
+  #drug:tr_centered - tr_centered:neutral   0.007200079 0.012206416 drugVneutralXtime     Discovery Sample      -0.0167244971 0.03112466
+  #tr_centered                              0.002293823 0.007005544              Time     Discovery Sample      -0.0114370430 0.01602469
+  #drug - neutral1                          0.061576119 0.021330626      drugVneutral     Replication Sample 1  0.0197680912 0.10338415
+  #drug:tr_centered - tr_centered:neutral1 -0.006893648 0.021998128 drugVneutralXtime     Replication Sample 1  -0.0500099800 0.03622268
+
+  plot_frame$task_nospace <- gsub(' ', '', plot_frame$task)
+  plot_frame$task_nospace <- gsub('-', '', plot_frame$task_nospace)
+
+  for (sample1 in names(ztable_condition)){
+    for (sample2 in names(ztable_condition)){
+      #need to use grepl because row names are not repeated--so e.g. they are 'drug - neutral', 'drug - neutral1', and so on
+      beta1 <- plot_frame$beta[(plot_frame$task_nospace == sample1) & grepl(pattern = 'drug - neutral', rownames(plot_frame))]
+      beta2 <- plot_frame$beta[(plot_frame$task_nospace == sample2) & grepl(pattern = 'drug - neutral', rownames(plot_frame))]
+      se1 <- plot_frame$se[(plot_frame$task_nospace == sample1) & grepl(pattern = 'drug - neutral', rownames(plot_frame))]
+      se2 <- plot_frame$se[(plot_frame$task_nospace == sample2) & grepl(pattern = 'drug - neutral', rownames(plot_frame))]
+      this_z <- (beta1 - beta2) / sqrt(se1 * se1 + se2 * se2)
+      ztable_condition[rownames(ztable_condition) == sample1, sample2] <- ztable_condition[rownames(ztable_condition) == sample2, sample1] <- this_z
+      
+      
+      beta1 <- plot_frame$beta[(plot_frame$task_nospace == sample1) & grepl(pattern = 'drug:tr_centered - tr_centered:neutral', rownames(plot_frame))]
+      beta2 <- plot_frame$beta[(plot_frame$task_nospace == sample2) & grepl(pattern = 'drug:tr_centered - tr_centered:neutral', rownames(plot_frame))]
+      se1 <- plot_frame$se[(plot_frame$task_nospace == sample1) & grepl(pattern = 'drug:tr_centered - tr_centered:neutral', rownames(plot_frame))]
+      se2 <- plot_frame$se[(plot_frame$task_nospace == sample2) & grepl(pattern = 'drug:tr_centered - tr_centered:neutral', rownames(plot_frame))]
+      this_z <- (beta1 - beta2) / sqrt(se1 * se1 + se2 * se2)
+      ztable_conditionbytime[rownames(ztable_conditionbytime) == sample1, sample2] <- ztable_conditionbytime[rownames(ztable_conditionbytime) == sample2, sample1] <- this_z
+      
+      
+    }
+  }
+  
+  ptable_condition <- ztable_condition
+  ptable_conditionbytime <- ztable_conditionbytime
+  for (n in names(ptable_condition)){
+    ptable_condition[,n] <- 2*pnorm(-abs(ptable_condition[,n]))
+    ptable_conditionbytime[,n] <- 2*pnorm(-abs(ptable_conditionbytime[,n]))
+  }
+  print('###Condition z-scores###')
+  print(ztable_condition)
+  print('###Condition by time z-scores###')
+  print(ztable_conditionbytime)
+    
+  print('###Condition p-values###')
+  print(ptable_condition)
+  print('###Condition by time p-values###')
+  print(ptable_conditionbytime)
+  
+  write.csv(ztable_condition, paste0('ztable-condition-fullmodel-', label, '.csv'), row.names = TRUE) 
+  write.csv(ztable_conditionbytime, paste0('ztable-conditionbytime-fullmodel-', label, '.csv'), row.names = TRUE)
+  
+  write.csv(ptable_condition, paste0('ptable-condition-fullmodel-', label, '.csv'), row.names = TRUE) 
+  write.csv(ptable_conditionbytime, paste0('ptable-conditionbytime-fullmodel-', label, '.csv'), row.names = TRUE)
+  
+  write.csv(plot_frame, paste0('plot_frame-condition-fullmodel-', label, '.csv'), row.names = TRUE) 
+
+  
+}
+  
+##taken from jsPlot/color_utils.R to matchbe able to match colors easily
+col_check2 <- function(geom.colors, collen) {
+  # --------------------------------------------
+  # check color argument
+  # --------------------------------------------
+  # check for corrct color argument
+  if (!is.null(geom.colors)) {
+    # check for color brewer palette
+    if (is.brewer.pal(geom.colors[1])) {
+      geom.colors <- scales::brewer_pal(palette = geom.colors[1])(collen)
+    } else if (is.sjplot.pal(geom.colors[1])) {
+      geom.colors <- get_sjplot_colorpalette(geom.colors[1], collen)
+      # do we have correct amount of colours?
+    } else if (geom.colors[1] == "gs") {
+      geom.colors <- scales::grey_pal()(collen)
+      # do we have correct amount of colours?
+    } else if (geom.colors[1] == "bw") {
+      geom.colors <- rep("black", times = collen)
+      # do we have correct amount of colours?
+    } else if (length(geom.colors) > collen) {
+      # shorten palette
+      geom.colors <- geom.colors[1:collen]
+    } else if (length(geom.colors) < collen) {
+      # repeat color palette
+      geom.colors <- rep(geom.colors, times = collen)
+      # shorten to required length
+      geom.colors <- geom.colors[1:collen]
+    }
+  } else {
+    geom.colors <- scales::brewer_pal(palette = "Set1")(collen)
+  }
+
+  geom.colors
+}
+# check whether a color value is indicating
+# a color brewer palette
+is.brewer.pal <- function(pal) {
+  bp.seq <- c("BuGn", "BuPu", "GnBu", "OrRd", "PuBu", "PuBuGn", "PuRd", "RdPu",
+              "YlGn", "YlGnBu", "YlOrBr", "YlOrRd", "Blues", "Greens", "Greys",
+              "Oranges", "Purples", "Reds")
+  bp.div <- c("BrBG", "PiYG", "PRGn", "PuOr", "RdBu", "RdGy", "RdYlBu",
+              "RdYlGn", "Spectral")
+  bp.qul <- c("Accent", "Dark2", "Paired", "Pastel1", "Pastel2", "Set1",
+              "Set2", "Set3")
+  bp <- c(bp.seq, bp.div, bp.qul)
+  pal %in% bp
+}
+plot_combination <- function(roi, label, limits_spag = c(-2,2), limits_y = c(-1, 1), forest_range = c(-0.5, 0.5)){
+
+  #roi <- '9'
+  #label <- 'LIFG'
+  #limits_y = c(-0.3, 0.5)
+  #forest_range = c(-0.5, 0.5)
+
+  tdcs_list <- one_errts_lme(roi, label, idps_tdcs, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Discovery Sample', xmat = xmatrix_tdcs)
+  neurocaps_mcr_list <- one_errts_lme(roi, label, idps_neurocaps_mcr, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 1', xmat = xmatrix_neurocaps_mcr)
+  neurocaps_ocr_list <- one_errts_lme(roi, label, idps_neurocaps_ocr, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 2', xmat = xmatrix_neurocaps_ocr)
+  tacs_list <- one_errts_lme(roi, label, idps_tacs, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Sample 2-Retest', xmat = xmatrix_tacs)
+
+  print(ggarrange(tdcs_list$p, neurocaps_mcr_list$p, neurocaps_ocr_list$p, tacs_list$p, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
+
+  #compare_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model)
+  
+  #print model with restricted range
+  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, 
+                    m.labels = c('Discovery Sample', 'Replication Sample 1', 'Replication Sample 2', 'Sample 2-Retest')) + ylim(forest_range))
+  #plot model without restricting range so you can see where 'motion' falls
+  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, 
+                    m.labels = c('Discovery Sample', 'Replication Sample 1', 'Replication Sample 2', 'Sample 2-Retest')))# + ylim(-0.5, 0.5))
+  
+  plot_frame <- NULL
+  #forest plot for contrasts, which is akin to what we were looking at before
+  for(this_list in list(tdcs_list, neurocaps_mcr_list, neurocaps_ocr_list, tacs_list)){
+    s1 <- summary(this_list$contrasts)
+    condition_beta <- s1$test[3]$coefficients[1]
+    conditionxtime_beta <- s1$test[3]$coefficients[2]
+    #tr_beta and tr_se are taken from a post hoc test that is the sum of tr_centered and the tr_centered:neutral interaction
+    #this is to match the main effect of time in the primary analysis, where neutral is in the interecept
+    tr_beta <- s1$test[3]$coefficients[3]
+    
+    condition_se <- s1$test[4]$sigma[1]
+    conditionxtime_se <- s1$test[4]$sigma[2]
+    tr_se <- s1$test[4]$sigma[3]
+    
+    s2 <- summary(this_list$model)$tTable
+    #tr_beta <- s2[, 'Value']['tr_centered']
+    #tr_se <- s2[, 'Std.Error']['tr_centered']
+    
+    
+    
+    
+    plot_row <- data.frame(beta = c(condition_beta, conditionxtime_beta, tr_beta), se = c(condition_se, conditionxtime_se, tr_se),
+                           effect = c('drugVneutral', 'drugVneutralXtime', 'Time'), task = this_list$task)
+    plot_frame <- rbind(plot_frame, plot_row)
+  }
+  #ggplot(plot_frame) + geom_point(aes(y = beta, x = effect))
+  plot_frame$lower = plot_frame$beta - 1.96*plot_frame$se
+  plot_frame$upper = plot_frame$beta + 1.96*plot_frame$se
+  #plot_frame$task <- factor(plot_frame$task, levels = c('Discovery Sample', 'Replication Sample 1', 'Replication Sample 2', 'Sample 2-Retest'))
+  plot_frame$task <- factor(plot_frame$task, levels = c('Sample 2-Retest', 'Replication Sample 2','Replication Sample 1', 'Discovery Sample'))
+  plot_frame$effect <- factor(plot_frame$effect, levels = c('drugVneutral', 'Time', 'drugVneutralXtime'))
+  p = ggplot(data=plot_frame,
+    aes(x = task,y = beta, ymin = lower, ymax = upper ))+
+    geom_pointrange(aes(col=task))+
+    geom_hline(aes(fill=task),yintercept =0, linetype=2)+
+    xlab(label)+ ylab("Contrast Beta (95% Confidence Interval)")+
+    geom_errorbar(aes(ymin=lower, ymax=upper,col=task),width=0.5,cex=1)+ 
+    facet_wrap(~effect,strip.position="left",nrow=3,scales = "free_y") +
+    theme(plot.title=element_text(size=16,face="bold"),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_text(face="bold"),
+        axis.title=element_text(size=12,face="bold"),
+        strip.text.y = element_text(hjust=0,vjust = 1,angle=180,face="bold"))+
+        coord_flip() + scale_colour_manual(values = col_check2('Set1', 4))
+  print(p)
+  
+  compare_models(plot_frame, label)
+  #from:
+  #https://stats.stackexchange.com/questions/93540/testing-equality-of-coefficients-from-two-different-regressions
+  #to test for a difference in betas, compute:
+  #Z = (beta1 - beta2)/sqrt(SE(beta1)^2 + SE(beta2)^2)
+  #pwidth = 6
+  #pheight = 8
+  #print(ggarrange(tdcs_list$p, neurocaps_mcr_list$p, neurocaps_ocr_list$p, tacs_list$p, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
+  #ggsave(paste0(label, '-lineplot.png') , ggarrange(tdcs_list$p, neurocaps_mcr_list$p, neurocaps_ocr_list$p, tacs_list$p, ncol = 2, nrow = 2, 
+  #                                                  common.legend = TRUE, legend = 'bottom'),
+  #       width = pwidth, height = pheight)
+  #print(ggarrange(tdcs_list$p2, neurocaps_mcr_list$p2, neurocaps_ocr_list$p2, tacs_list$p2, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
+#  
+#  print(ggarrange(tdcs_list$p3, neurocaps_mcr_list$p3, neurocaps_ocr_list$p3, tacs_list$p3, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
+  print('###tDCS MCR###')
+  print(summary(tdcs_list$model))
+  #print(anova(tdcs_list$model, type = 'marginal'))
+  print('###Neurocaps MCR###')
+  print(summary(neurocaps_mcr_list$model))
+  print('###Neurocaps OCR###')
+  print(summary(neurocaps_ocr_list$model))
+  print('###tACS OCR###')
+  print(summary(tacs_list$model))
+  
+  
+  ##make model output table to save
+  #tablefile <- paste0(label, '-modeltable.csv')
+  #write.table('tDCS Model Output', tablefile)
+  #write.table(round(summary(tdcs_list$model)$coefficients, digits = 3), file = tablefile,
+  #          row.names = TRUE, append = TRUE, sep = ',')
+  
+  #write.table('Neurocaps MCR Model Output', tablefile, append = TRUE)
+  #write.table(round(summary(neurocaps_mcr_list$model)$coefficients, digits = 3), file = tablefile,
+  #          row.names = TRUE, append = TRUE, sep = ',')
+  
+  #write.table('Neurocaps OCR Model Output', tablefile, append = TRUE)
+  #write.table(round(summary(neurocaps_ocr_list$model)$coefficients, digits = 3), file = tablefile,
+  #          row.names = TRUE, append = TRUE, sep = ',')
+  
+  #write.table('tACS OCR Model Output', tablefile, append = TRUE)
+  #write.table(round(summary(tacs_list$model)$coefficients, digits = 3), file = tablefile,
+  #          row.names = TRUE, append = TRUE, sep = ',')
+  
+  
+}
+
+
+
+
+
+```
+
+## Condition
+
+###LIFG
+
+
+```{r}
+
+#one_errts_lme(roi = '1', this_label = 'VMPFC', idps = idps_tdcs, xmat = xmatrix, prefix = 'dcr_tpre_', task = '')
+eval_rest = TRUE
+```
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("LIFG_z16.png")
+
+plot_combination('9', 'LIFG', limits_y = c(-0.15, 0.45))
+
+
+```
+
+
+```{r}
+
+#one_errts_lme(roi = '1', this_label = 'VMPFC', idps = idps_tdcs, xmat = xmatrix, prefix = 'dcr_tpre_', task = '')
+eval_rest = TRUE
+```
+
+###RIFG
+
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("RIFG_z7.png")
+
+plot_combination('10', 'RIFG', limits_y = c(-0.15, 0.5))
+
+```
+
+###RDLPFC
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("RDLPFC_z7.png")
+
+plot_combination('12', 'RDLPFC', limits_y = c(-0.45, 0.1))
+
+```
+
+
+## ConditionXTime
+
+### VMPFC
+
+```{r}
+
+#knitr::include_graphics("VMPFC_zm11.png")
+
+plot_combination('1', 'VMPFC', limits_y = c(-0.4, 0.5))
+
+```
+
+### LSTG
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("LSFG_z11.png")
+
+plot_combination('3', 'LSTG', limits_y = c(-0.5, 0.3))
+
+```
+
+
+
+### RSTG
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("RSFG_z7.png")
+
+plot_combination('4', 'RSTG', limits_y = c(-0.4, 0.25))
+
+```
+
+### LVStriatum
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("LVStri_zm1.png")
+
+plot_combination('5', 'LVSTRI', limits_y = c(-0.22, 0.35))
+
+```
+
+### RVStriatum
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("RVStri_zm1.png")
+
+plot_combination('6', 'RVSTRI', limits_y = c(-0.2, 0.3))
+
+```
+
+### RAmy
+
+```{r, eval = eval_rest}
+
+#knitr::include_graphics("RAmy_zm16.png")
+
+plot_combination('8', 'RAmy', limits_y = c(-0.05, 0.75))
+
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

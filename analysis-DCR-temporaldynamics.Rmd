@@ -172,6 +172,7 @@ plot_one <- function(roi, this_label, idps, limits_spag, limits_y = c(-1, 1), pr
   #this_lme <- lmer(paste('value ~ condition * time + (1|id)'), data = long_data)
   #for checking for NA's, looks like it's all good now
   #print(long_data)
+  
   this_lme <- lmer(paste('value ~ condition * time + motion + (1|id/condition)'), data = long_data)
   #print(summary(this_lme))
   within_visit_iccs <- sjstats::icc(this_lme)
@@ -203,8 +204,11 @@ plot_one <- function(roi, this_label, idps, limits_spag, limits_y = c(-1, 1), pr
   linesize <- 1
   #swap condition levels back for this plot, so that drug is red and neutral is blue
   plot_frame$condition <- factor(plot_frame$condition, levels = c('drug', 'neutral'))
-  p <- ggplot(plot_frame) + geom_line(aes_string(x = 'time', y = mean_str, color = 'condition'), size = linesize) + geom_errorbar(aes_string(x = 'time', ymax = 'bar_top',                                                       ymin = 'bar_bottom', color = 'condition', width = 0.1), size = ebsize) +
-                      theme(text = element_text(size=10)) + ggtitle(task) + ylab('') + xlab('') + ylim(limits_y)
+  #add 2.5 so time is blocks, uncentered
+  p <- ggplot(plot_frame) + geom_hline(yintercept = 0, color = 'gray') + geom_line(aes_string(x = 'time + 2.5', y = mean_str, color = 'condition'), size = linesize) + 
+    geom_errorbar(aes_string(x = 'time + 2.5', ymax = 'bar_top',                                                       ymin = 'bar_bottom', color = 'condition', width = 0.1), size = ebsize) +
+                      theme(text = element_text(size=10)) + ggtitle(task) + ylab('Percent Signal Change') + xlab('Time (blocks)') + ylim(limits_y) 
+    
   
   #print(p)
   
@@ -239,7 +243,7 @@ plot_one <- function(roi, this_label, idps, limits_spag, limits_y = c(-1, 1), pr
   
   return(list(model = this_lme, plotframe = plot_frame, p = p, p2=p2, p3=p3, dset = long_data, within_visit_iccs = within_visit_iccs,
               within_iccs_simple_intervals = within_iccs_simple_intervals,
-              within_contrast_icc_intervals = within_contrast_icc_intervals))
+              within_contrast_icc_intervals = within_contrast_icc_intervals, task = task))
   
    
 }
@@ -291,6 +295,7 @@ plot_one_beh <- function(measure, this_label, idps, limits_spag, limits_y = c(1,
   #this_lme <- lmer(paste('value ~ condition * time + (1|id)'), data = long_data)
   #for checking for NA's, looks like it's all good now
   #print(long_data)
+  
   this_lme <- lmer(paste('value ~ condition * time +  (1|id/condition)'), data = long_data)
   #print(summary(this_lme))
   within_visit_iccs <- sjstats::icc(this_lme)
@@ -322,7 +327,7 @@ plot_one_beh <- function(measure, this_label, idps, limits_spag, limits_y = c(1,
   linesize <- 1
   #swap condition levels back for this plot, so that drug is red and neutral is blue
   plot_frame$condition <- factor(plot_frame$condition, levels = c('drug', 'neutral'))
-  p <- ggplot(plot_frame) + geom_line(aes_string(x = 'time', y = mean_str, color = 'condition'), size = linesize) + geom_errorbar(aes_string(x = 'time', ymax = 'bar_top',                                                       ymin = 'bar_bottom', color = 'condition', width = 0.1), size = ebsize) +
+  p <- ggplot(plot_frame) + geom_line(aes_string(x = 'time + 2.5', y = mean_str, color = 'condition'), size = linesize) + geom_errorbar(aes_string(x = 'time + 2.5', ymax = 'bar_top',                                                       ymin = 'bar_bottom', color = 'condition', width = 0.1), size = ebsize) +
                       theme(text = element_text(size=10)) + ggtitle(task) + ylab('') + xlab('') + ylim(limits_y)
   
   #print(p)
@@ -358,7 +363,7 @@ plot_one_beh <- function(measure, this_label, idps, limits_spag, limits_y = c(1,
   
   return(list(model = this_lme, plotframe = plot_frame, p = p, p2=p2, p3=p3, dset = long_data, within_visit_iccs = within_visit_iccs,
               within_iccs_simple_intervals = within_iccs_simple_intervals,
-              within_contrast_icc_intervals = within_contrast_icc_intervals))
+              within_contrast_icc_intervals = within_contrast_icc_intervals, task = task))
   
    
 }
@@ -400,7 +405,7 @@ extract_icc_intervals <- function(this_icc){
   return(this_row)   
 }
 
-compare_models <- function(tdcs_model, neurocaps_mcr_model, neurocaps_ocr_model, tacs_model){
+compare_models <- function(tdcs_model, neurocaps_mcr_model, neurocaps_ocr_model, tacs_model, label){
   #prints off tables of z-scores and p-values for the coefficients of condition and condition*time compared between all pairs of models
   #tdcs_summary <- summary(tdcs_model)
   #fill this with z-scores testing for differences between coefficients of different models
@@ -411,6 +416,8 @@ compare_models <- function(tdcs_model, neurocaps_mcr_model, neurocaps_ocr_model,
   ztable_conditionbytime <- data.frame(tdcs=c(NA,NA,NA,NA), neurocaps_mcr = c(NA,NA,NA,NA),
                        neurocaps_ocr = c(NA,NA,NA,NA), tacs=c(NA,NA,NA,NA))
   rownames(ztable_conditionbytime) <- c('tdcs', 'neurocaps_mcr', 'neurocaps_ocr', 'tacs')
+  
+  
   
   all_models <- list(summary(tdcs_model), summary(neurocaps_mcr_model), summary(neurocaps_ocr_model), summary(tacs_model))
   for (i in 1:3){
@@ -460,11 +467,63 @@ compare_models <- function(tdcs_model, neurocaps_mcr_model, neurocaps_ocr_model,
   print(ptable_conditionbytime)
   
   
+  write.csv(ztable_condition, paste0('ztable-condition-', label, '.csv'), row.names = FALSE) 
+  write.csv(ztable_conditionbytime, paste0('ztable-conditionbytime-', label, '.csv'), row.names = FALSE)
+  
+  write.csv(ptable_condition, paste0('ptable-condition-', label, '.csv'), row.names = FALSE) 
+  write.csv(ptable_conditionbytime, paste0('ptable-conditionbytime-', label, '.csv'), row.names = FALSE)
+  
   
   
   
 }
-  
+  ##taken from jsPlot/color_utils.R to matchbe able to match colors easily
+col_check2 <- function(geom.colors, collen) {
+  # --------------------------------------------
+  # check color argument
+  # --------------------------------------------
+  # check for corrct color argument
+  if (!is.null(geom.colors)) {
+    # check for color brewer palette
+    if (is.brewer.pal(geom.colors[1])) {
+      geom.colors <- scales::brewer_pal(palette = geom.colors[1])(collen)
+    } else if (is.sjplot.pal(geom.colors[1])) {
+      geom.colors <- get_sjplot_colorpalette(geom.colors[1], collen)
+      # do we have correct amount of colours?
+    } else if (geom.colors[1] == "gs") {
+      geom.colors <- scales::grey_pal()(collen)
+      # do we have correct amount of colours?
+    } else if (geom.colors[1] == "bw") {
+      geom.colors <- rep("black", times = collen)
+      # do we have correct amount of colours?
+    } else if (length(geom.colors) > collen) {
+      # shorten palette
+      geom.colors <- geom.colors[1:collen]
+    } else if (length(geom.colors) < collen) {
+      # repeat color palette
+      geom.colors <- rep(geom.colors, times = collen)
+      # shorten to required length
+      geom.colors <- geom.colors[1:collen]
+    }
+  } else {
+    geom.colors <- scales::brewer_pal(palette = "Set1")(collen)
+  }
+
+  geom.colors
+}
+# check whether a color value is indicating
+# a color brewer palette
+is.brewer.pal <- function(pal) {
+  bp.seq <- c("BuGn", "BuPu", "GnBu", "OrRd", "PuBu", "PuBuGn", "PuRd", "RdPu",
+              "YlGn", "YlGnBu", "YlOrBr", "YlOrRd", "Blues", "Greens", "Greys",
+              "Oranges", "Purples", "Reds")
+  bp.div <- c("BrBG", "PiYG", "PRGn", "PuOr", "RdBu", "RdGy", "RdYlBu",
+              "RdYlGn", "Spectral")
+  bp.qul <- c("Accent", "Dark2", "Paired", "Pastel1", "Pastel2", "Set1",
+              "Set2", "Set3")
+  bp <- c(bp.seq, bp.div, bp.qul)
+  pal %in% bp
+}
 
 
 plot_combination <- function(roi, label, limits_spag = c(-2,2), limits_y = c(-1, 1), imaging = TRUE, forest_range = c(-0.5, 0.5)){
@@ -473,36 +532,85 @@ plot_combination <- function(roi, label, limits_spag = c(-2,2), limits_y = c(-1,
   #label <- 'LIFG'
   #limits_y = c(-0.3, 0.5)
   #limits_spag = c(-2, 2)
+  #imaging = TRUE
   
   if (imaging){
-    tdcs_list <- plot_one(roi, label, idps_tdcs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = '1212MCR')
-    neurocaps_mcr_list <- plot_one(roi, label, idps_neurocaps_mcr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'WiRMCR')
-    neurocaps_ocr_list <- plot_one(roi, label, idps_neurocaps_ocr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = '1212OCR')
-    tacs_list <- plot_one(roi, label, idps_tacs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = '1212OCR2')
+    tdcs_list <- plot_one(roi, label, idps_tdcs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Discovery Sample')
+    neurocaps_mcr_list <- plot_one(roi, label, idps_neurocaps_mcr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 1')
+    neurocaps_ocr_list <- plot_one(roi, label, idps_neurocaps_ocr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 2')
+    tacs_list <- plot_one(roi, label, idps_tacs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Sample 2-Retest')
   } else {
-    tdcs_list <- plot_one_beh(roi, label, idps_tdcs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = '1212MCR')
-    neurocaps_mcr_list <- plot_one_beh(roi, label, idps_neurocaps_mcr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'WiRMCR')
-    neurocaps_ocr_list <- plot_one_beh(roi, label, idps_neurocaps_ocr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = '1212OCR')
-    tacs_list <- plot_one_beh(roi, label, idps_tacs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = '1212OCR2')
+    tdcs_list <- plot_one_beh(roi, label, idps_tdcs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Discovery Sample')
+    neurocaps_mcr_list <- plot_one_beh(roi, label, idps_neurocaps_mcr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 1')
+    neurocaps_ocr_list <- plot_one_beh(roi, label, idps_neurocaps_ocr, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_', task = 'Replication Sample 2')
+    tacs_list <- plot_one_beh(roi, label, idps_tacs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Sample 2-Retest')
   }
-  compare_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model)
+  compare_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, label)
   
+  
+  ###
+  #extract betas and SEs for contrasts, to compare with finer grained method
+  plot_frame <- NULL
+  for(this_list in list(tdcs_list, neurocaps_mcr_list, neurocaps_ocr_list, tacs_list)){
+    print('one')
+    s1 <- summary(this_list$model)
+    condition_beta <- s1$coefficients[, 'Estimate']['conditiondrug']
+    conditionxtime_beta <- s1$coefficients[, 'Estimate']['conditiondrug:time']
+    
+    condition_se <- s1$coefficients[, 'Std. Error']['conditiondrug']
+    conditionxtime_se <- s1$coefficients[, 'Std. Error']['conditiondrug:time']
+    
+    tr_beta <- s1$coefficients[, 'Estimate']['time']
+    tr_se <- s1$coefficients[, 'Std. Error']['time']
+    
+    
+    plot_row <- data.frame(beta = c(condition_beta, conditionxtime_beta, tr_beta), se = c(condition_se, conditionxtime_se, tr_se),
+                           effect = c('Drug>Neutral', 'Interaction', 'Time'), task = this_list$task)
+    plot_frame <- rbind(plot_frame, plot_row)
+  }
+  #ggplot(plot_frame) + geom_point(aes(y = beta, x = effect))
+  plot_frame$lower = plot_frame$beta - 1.96*plot_frame$se
+  plot_frame$upper = plot_frame$beta + 1.96*plot_frame$se
+  #plot_frame$task <- factor(plot_frame$task, levels = c('Discovery Sample', 'Replication Sample 1', 'Replication Sample 2', 'Sample 2-Retest'))
+  plot_frame$task <- factor(plot_frame$task, levels = c('Sample 2-Retest', 'Replication Sample 2','Replication Sample 1', 'Discovery Sample'))
+  #plot_frame$task <- factor(plot_frame$task, levels = c('1212OCR2', '1212OCR','Replication Sample 1', '1212MCR'))
+  plot_frame$effect <- factor(plot_frame$effect, levels = c('Drug>Neutral', 'Time', 'Interaction'))
+  
+  p = ggplot(data=plot_frame,
+    aes(x = task,y = beta, ymin = lower, ymax = upper ))+
+    geom_pointrange(aes(col=task))+
+    geom_hline(aes(fill=task),yintercept =0, linetype=2)+
+    xlab(label)+ ylab("Contrast Beta (95% Confidence Interval)")+
+    geom_errorbar(aes(ymin=lower, ymax=upper,col=task),width=0.5,cex=1)+ 
+    facet_wrap(~effect,strip.position="left",nrow=3,scales = "free_y") +
+    theme(plot.title=element_text(size=16,face="bold"),
+        axis.text.y=element_blank(),
+        axis.ticks.y=element_blank(),
+        axis.text.x=element_text(face="bold"),
+        axis.title=element_text(size=12,face="bold"),
+        strip.text.y = element_text(hjust=0,vjust = 1,angle=180,face="bold"))+
+        coord_flip() + scale_colour_manual(values = col_check2('Set1', 4))
+  print(p)
+  
+  #save the plot_frame, so we can easily plot a summary of old vs new analysis
+  write.csv(plot_frame, paste0('plot_frame-', label, '.csv'), row.names = TRUE)
+  ###
   
   #print model with restricted range
-  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, m.labels = c('tDCS', 'WirMCR', '1212OCR', '1212OCR2')) + ylim(forest_range))
+  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, m.labels = c('tDCS', 'Replication Sample 1', '1212OCR', '1212OCR2')) + ylim(forest_range))
   #plot model without restricting range so you can see where 'motion' falls
-  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, m.labels = c('tDCS', 'WirMCR', '1212OCR', '1212OCR2')))# + ylim(-0.5, 0.5))
+  print(plot_models(tdcs_list$model, neurocaps_mcr_list$model, neurocaps_ocr_list$model, tacs_list$model, m.labels = c('tDCS', 'Replication Sample 1', '1212OCR', '1212OCR2')))# + ylim(-0.5, 0.5))
   
   #from:
   #https://stats.stackexchange.com/questions/93540/testing-equality-of-coefficients-from-two-different-regressions
   #to test for a difference in betas, compute:
   #Z = (beta1 - beta2)/sqrt(SE(beta1)^2 + SE(beta2)^2)
   pwidth = 6
-  pheight = 8
+  pheight = 6
   print(ggarrange(tdcs_list$p, neurocaps_mcr_list$p, neurocaps_ocr_list$p, tacs_list$p, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
   ggsave(paste0(label, '-lineplot.png') , ggarrange(tdcs_list$p, neurocaps_mcr_list$p, neurocaps_ocr_list$p, tacs_list$p, ncol = 2, nrow = 2, 
-                                                    common.legend = TRUE, legend = 'bottom'),
-         width = pwidth, height = pheight)
+                                                    common.legend = TRUE, legend = 'bottom'), width = pwidth, height = pheight)
+  
   print(ggarrange(tdcs_list$p2, neurocaps_mcr_list$p2, neurocaps_ocr_list$p2, tacs_list$p2, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
   
   print(ggarrange(tdcs_list$p3, neurocaps_mcr_list$p3, neurocaps_ocr_list$p3, tacs_list$p3, ncol = 2, nrow = 2, common.legend = TRUE, legend = 'bottom'))
