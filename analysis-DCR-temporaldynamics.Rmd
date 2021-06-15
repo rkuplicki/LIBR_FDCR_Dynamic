@@ -533,6 +533,7 @@ plot_combination <- function(roi, label, limits_spag = c(-2,2), limits_y = c(-1,
   #limits_y = c(-0.3, 0.5)
   #limits_spag = c(-2, 2)
   #imaging = TRUE
+  #forest_range = c(-0.5, 0.5)
   
   if (imaging){
     tdcs_list <- plot_one(roi, label, idps_tdcs, limits_spag = limits_spag, limits_y = limits_y, prefix = 'dcr_tpre_', task = 'Discovery Sample')
@@ -714,14 +715,14 @@ plot_combination <- function(roi, label, limits_spag = c(-2,2), limits_y = c(-1,
   
   
   #plot ICCs that come from the LME
-  within_icc_results <- as.data.frame(rbind(tdcs_list$within_visit_iccs, neurocaps_mcr_list$within_visit_iccs, neurocaps_ocr_list$within_visit_iccs, tacs_list$within_visit_iccs))
-  within_icc_results$dset <- c('tDCS', 'WirMCR', '1212OCR', '1212OCR2')
-  within_icc_results$id_condition <- within_icc_results$id + within_icc_results$`condition:id`
-  melted_within_data <- melt(within_icc_results, id.vars = c('dset', 'condition:id'))
-  melted_within_data$dset <- factor(melted_within_data$dset, levels = c('1212OCR',  '1212OCR2','WirMCR', 'tDCS'))
-  p <- ggplot(data = melted_within_data) + geom_bar(aes(x = dset, y = value, color = variable, fill = variable), stat = 'identity', position = 'dodge') +
-    coord_flip() + ggtitle(paste0('Within Session ICCs from LME for: ', label))
-  print(p)
+  #within_icc_results <- as.data.frame(rbind(tdcs_list$within_visit_iccs, neurocaps_mcr_list$within_visit_iccs, neurocaps_ocr_list$within_visit_iccs, tacs_list$within_visit_iccs))
+  #within_icc_results$dset <- c('tDCS', 'WirMCR', '1212OCR', '1212OCR2')
+  #within_icc_results$id_condition <- within_icc_results$id + within_icc_results$`condition:id`
+  #melted_within_data <- melt(within_icc_results, id.vars = c('dset', 'condition:id'))
+  #melted_within_data$dset <- factor(melted_within_data$dset, levels = c('1212OCR',  '1212OCR2','WirMCR', 'tDCS'))
+  #p <- ggplot(data = melted_within_data) + geom_bar(aes(x = dset, y = value, color = variable, fill = variable), stat = 'identity', position = 'dodge') +
+  #  coord_flip() + ggtitle(paste0('Within Session ICCs from LME for: ', label))
+  #print(p)
   
   #plot within-session ICCs from psych's ICC function, treating all conditions as the same (should be similar to 'id' above)
   tdcs_list$within_iccs_simple_intervals$var <- 'tDCS'
@@ -1050,6 +1051,13 @@ extract_slopes_beh <- function(measure, this_label, idps, prefix = 'dcr_'){
 
   
 extract_one_slopes <- function( roi = '1', this_label = 'VMPFC', prefix = 'dcr_tpre_', idps = idps_tdcs){
+  
+  
+  #roi = '1'
+  #this_label = 'VMPFC'
+  #prefix = 'dcr_tpre_'
+  #idps = idps_tdcs
+  
   column_prefixes <- c('stats_tdcsprelim_drug.r11.0.coef_mean_',
            'stats_tdcsprelim_drug.r12.0.coef_mean_',
            'stats_tdcsprelim_drug.r13.0.coef_mean_',
@@ -1080,7 +1088,8 @@ extract_one_slopes <- function( roi = '1', this_label = 'VMPFC', prefix = 'dcr_t
   all_results <- NULL
   for (this_id in unique(long_data$id)){  
     #this_id <- 'AR316'
-    this_lm <- lm(paste('value ~ condition * time + motion'), data = long_data[long_data$id == this_id,])
+    this_sub_data <- long_data[long_data$id == this_id,]
+    this_lm <- lm(paste('value ~ condition * time + motion'), data = this_sub_data)
     neutral_string <- paste0(this_label, '_slopeNeutral')
     meth_string <- paste0(this_label, '_slopeMeth')
     delta_string <- paste0(this_label, '_slopeMethMinusNeutral')
@@ -1088,7 +1097,27 @@ extract_one_slopes <- function( roi = '1', this_label = 'VMPFC', prefix = 'dcr_t
                                 meth_string = this_lm$coefficients['time'] + this_lm$coefficients['conditiondrug:time'],
                                 delta_string = this_lm$coefficients['conditiondrug:time']))
     names(these_results) <- c('id', neutral_string, meth_string, delta_string)
+    
+    #add in mean of MethMinusNeutral for block 1, block 2, averaged across blocks 1/2, and averaged across all blocks
+    block1_string <- paste0(this_label, '_MethMinusNeutralBlock.1')
+    these_results[, block1_string] <- this_sub_data$value[this_sub_data$condition == 'drug' & this_sub_data$time == -1.5] - this_sub_data$value[this_sub_data$condition == 'neutral' & this_sub_data$time == -1.5]
+    
+    block2_string <- paste0(this_label, '_MethMinusNeutralBlock.2')
+    these_results[, block2_string] <- this_sub_data$value[this_sub_data$condition == 'drug' & this_sub_data$time == -0.5] - this_sub_data$value[this_sub_data$condition == 'neutral' & this_sub_data$time == -0.5]
+    
+    block12_string <- paste0(this_label, '_MethMinusNeutralBlocks.1.2')
+    these_results[, block12_string] <- (sum(this_sub_data$value[this_sub_data$condition == 'drug' & this_sub_data$time %in% c(-1.5, -0.5)]) - 
+      sum(this_sub_data$value[this_sub_data$condition == 'neutral' & this_sub_data$time %in%  c(-1.5, -0.5)])) / 2
+    
+    block1234_string <- paste0(this_label, '_MethMinusNeutralBlocks.1.2.3.4')
+    these_results[, block1234_string] <- (sum(this_sub_data$value[this_sub_data$condition == 'drug']) - 
+      sum(this_sub_data$value[this_sub_data$condition == 'neutral'])) / 4
+    
+    
     all_results <- rbind(all_results, these_results)
+    
+    
+    
   }
   
   
@@ -1173,9 +1202,87 @@ to_plot <- c('Age', 'MethUseDuration', 'MethCost',"DaysSinceLastUse",
             "RSTG_slopeMethMinusNeutral",
             "LVSTRI_slopeMethMinusNeutral",
             "RVSTRI_slopeMethMinusNeutral",
-            "RAmy_slopeMethMinusNeutral")
+            "RAmy_slopeMethMinusNeutral",
+            "VMPFC_MethMinusNeutralBlock.1",
+            "VMPFC_MethMinusNeutralBlock.2",
+            "VMPFC_MethMinusNeutralBlocks.1.2",
+            "VMPFC_MethMinusNeutralBlocks.1.2.3.4",
+            
+            "LSTG_MethMinusNeutralBlock.1",
+            "LSTG_MethMinusNeutralBlock.2",
+            "LSTG_MethMinusNeutralBlocks.1.2",
+            "LSTG_MethMinusNeutralBlocks.1.2.3.4",
+            
+            "RSTG_MethMinusNeutralBlock.1",
+            "RSTG_MethMinusNeutralBlock.2",
+            "RSTG_MethMinusNeutralBlocks.1.2",
+            "RSTG_MethMinusNeutralBlocks.1.2.3.4",
+            
+            "LVSTRI_MethMinusNeutralBlock.1",
+            "LVSTRI_MethMinusNeutralBlock.2",
+            "LVSTRI_MethMinusNeutralBlocks.1.2",
+            "LVSTRI_MethMinusNeutralBlocks.1.2.3.4",
+            
+            "RVSTRI_MethMinusNeutralBlock.1",
+            "RVSTRI_MethMinusNeutralBlock.2",
+            "RVSTRI_MethMinusNeutralBlocks.1.2",
+            "RVSTRI_MethMinusNeutralBlocks.1.2.3.4",
+            
+            "RAmy_MethMinusNeutralBlock.1",
+            "RAmy_MethMinusNeutralBlock.2",
+            "RAmy_MethMinusNeutralBlocks.1.2",
+            "RAmy_MethMinusNeutralBlocks.1.2.3.4")
 
 library(corrplot)
+
+
+plot_one <- function(ROI){
+  
+  
+  
+  to_plot_common <- c('Age', 'MethUseDuration', 'MethCost',"DaysSinceLastUse",
+            "Craving_pre", "Craving_post", "Craving_delta", 
+            'methvsneutral_craving_selfreport_insidescanner',
+            'Craving_slopeMethMinusNeutral'
+            )
+  
+  to_plot_roi <- paste0(ROI, c("_slopeMethMinusNeutral",
+            "_MethMinusNeutralBlock.1",
+            "_MethMinusNeutralBlock.2",
+            "_MethMinusNeutralBlocks.1.2",
+            "_MethMinusNeutralBlocks.1.2.3.4"))
+  
+  to_plot <- c(to_plot_common, to_plot_roi)
+  
+  this_matrix <- cor(merged_data[, to_plot], use = 'pairwise.complete.obs')
+  pvals_raw <- cor.mtest(merged_data[, to_plot])
+
+  #get FDR corrected p-values to use for plotting
+  pvals_fdr <- pvals_raw$p
+  pvals_fdr[upper.tri(pvals_fdr)] <- p.adjust(pvals_raw$p[upper.tri(pvals_raw$p)])
+  pvals_fdr[lower.tri(pvals_fdr)] <- p.adjust(pvals_raw$p[lower.tri(pvals_raw$p)])
+
+
+  col2 <- colorRampPalette(rev(c("#67001F", "#B2182B", "#D6604D", "#F4A582",
+                           "#FDDBC7", "#FFFFFF", "#D1E5F0", "#92C5DE",
+                           "#4393C3", "#2166AC", "#053061")))
+
+
+  png(paste0('corrplot_slopes_sxs-', ROI, '.png'), width = 1000, height = 1000)
+  corrplot.mixed(this_matrix, upper = 'ellipse', lower = 'number', tl.pos = 'lt', tl.cex = 1,#, lower.col = "black",
+    upper.col = col2(50), lower.col = col2(50), p.mat = pvals_fdr, sig.level = 0.05)
+  dev.off()
+  
+  
+}
+
+plot_one('VMPFC')
+plot_one('LSTG')
+plot_one('RSTG')
+plot_one('LVSTRI')
+plot_one('RVSTRI')
+plot_one('RAmy')
+
 this_matrix <- cor(merged_data[, to_plot], use = 'pairwise.complete.obs')
 pvals_raw <- cor.mtest(merged_data[, to_plot])
 
@@ -1190,10 +1297,13 @@ col2 <- colorRampPalette(rev(c("#67001F", "#B2182B", "#D6604D", "#F4A582",
                            "#4393C3", "#2166AC", "#053061")))
 
 
-png('corrplot_slopes_sxs.png', width = 1000, height = 1000)
+png('corrplot_slopes_sxs.png', width = 1500, height = 1500)
 corrplot.mixed(this_matrix, upper = 'ellipse', lower = 'number', tl.pos = 'lt', tl.cex = 1,#, lower.col = "black",
   upper.col = col2(50), lower.col = col2(50), p.mat = pvals_fdr, sig.level = 0.05)
 dev.off()
+
+
+
 
 ```
 
